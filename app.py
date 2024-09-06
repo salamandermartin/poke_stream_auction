@@ -10,3 +10,9 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from typing import Dict
 import datetime
+
+app = Flask(__name__)
+
+@app.route("/")
+def auction_client():
+    return "<p>Hello</p>"

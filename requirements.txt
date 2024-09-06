@@ -1,0 +1,3 @@
+obs_websocket_py==1.0
+sqlmodel
+websockets
