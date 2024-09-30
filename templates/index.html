@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Join Auction Room</title>
+</head>
+<body>
+    <h1>Join the Auction Room</h1>
+
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
+    {% endif %}
+
+    <form action="/join" method="POST">
+        <input type="text" id="username" name="username" placeholder="Enter your name" required>
+        <button type="submit">Join Auction</button>
+    </form>
+</body>
+</html>
