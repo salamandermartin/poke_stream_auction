@@ -1,152 +1,102 @@
-from flask import Flask, render_template, session, redirect, request, url_for
-from flask_socketio import SocketIO, emit, join_room
-import time
-import threading
-from collections import deque
-from item import Item
-import bidder
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, emit, join_room, leave_room
+import obs_websocket_manager as obsm
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
 socketio = SocketIO(app)
 
-# Constants
-AUCTION_TIME_LIMIT = 60  # 60 seconds per auction
-MAX_USERS = 8
-INITIAL_MONEY = 100.0
+obs_manager = obsm.OBS_Manager()
+obs_manager.set_defaults(True)
 
-# Auction Manager class
-class AuctionManager:
-    def __init__(self):
-        self.bidders = {} #dictionary of bidders and information
-        self.item_queue = deque() #queue of items to be auctioned
-        self.current_item = None #item currently being auctioned
-        self.auction_in_progress = False #state of auction room being active
-        self.test_populate()
+# In-memory store for auction data
+auction_data = {
+    "current_item": None,
+    "bids": [],
+    "suggested_items": [],
+    "users": {},
+}
 
-    def test_populate(self):
-        start_item = Item('Pikachu', 'System', 1)
-        self.item_queue.append(start_item)
-
-    def add_bidder(self, username):
-        """Add a bidder to the auction."""
-        self.bidders[username] = {'money': 10000, 'items': []} #each bidder has 10000 dollars and no items yet
-
-    def suggest_item(self, username, item_name):
-        """Queue an item suggested by a user."""
-        new_item = Item(item_name, username, 1)
-        self.item_queue.append(new_item)
-
-    def start_next_auction(self):
-        """Start the next auction if available and not in progress."""
-        if self.item_queue:
-            self.auction_in_progress = True
-            self.current_item = self.item_queue.popleft()
-
-            # Notify the user that a new auction has started
-            socketio.emit('start_auction', {'item': self.current_item}, to=request.sid)
-
-            # Start the auction timer
-            threading.Thread(target=self.auction_timer).start()
-
-    def auction_timer(self):
-        """Timer for the auction countdown."""
-        time_left = 60
-        while time_left > 0:
-            time.sleep(1)
-            time_left -= 1
-            socketio.emit('timer_update', {'time_left': time_left}, to=request.sid)
-
-        # End the auction after the timer finishes
-        self.end_auction()
-
-    def end_auction(self):
-        """End the auction and start the next one."""
-        if self.current_item:
-            winner = self.current_item['highest_bidder']
-            if winner:
-                self.bidders[winner]['items'].append(self.current_item)
-
-            # Notify the users about the auction result
-            socketio.emit('auction_ended', {
-                'item': self.current_item,
-                'winner': winner,
-                'highest_bid': self.current_item.highest_bid
-            }, to=request.sid)
-
-            # Reset for the next auction
-            self.start_next_auction()  # Start the next auction automatically
-
-auction_manager = AuctionManager()
 
 @app.route('/')
 def index():
-    """Index page where users join the auction."""
     return render_template('index.html')
 
-@app.route('/join', methods=['POST'])
-def join_auction():
-    """Handle user joining the auction."""
-    username = request.form.get('username')
-
-    if username and len(auction_manager.bidders) < 8:
-        if username not in auction_manager.bidders:
-            # Add the user to the auction
-            auction_manager.add_bidder(username)
-            session['username'] = username
-            return redirect(url_for('auction_page'))
-        else:
-            return render_template('index.html', error="Username already taken.")
-    return render_template('index.html', error="Auction room full or invalid username.")
-
-@app.route('/auction')
-def auction_page():
-    """Auction room where users can participate."""
-    return render_template('auction.html', item = auction_manager.item_queue.pop())
-
-@socketio.on('suggest_item')
-def handle_suggest_item(data):
-    """Handle item suggestion."""
-    username = session.get('username')
-    item_name = data.get('item_name')
-
-    if username and item_name:
-        auction_manager.suggest_item(username, item_name)
-        auction_manager.start_next_auction()
-
-@socketio.on('place_bid')
-def handle_place_bid(data):
-    """Handle bid placement."""
-    username = session.get('username')
-    bid_amount = data.get('bid_amount')
-
-    print(username)
-    print(bid_amount)
-
-    if auction_manager.current_item:
-        current_item = auction_manager.current_item
-
-        if bid_amount > current_item.highest_bid and auction_manager.bidders[username]['money'] >= bid_amount:
-            # Update highest bid and bidder
-            current_item.highest_bid = bid_amount
-            current_item.highest_bidder = username
-            auction_manager.bidders[username]['money'] -= bid_amount
-
-            # Notify users about the new highest bid
-            socketio.emit('bid_update', {
-                'item': current_item,
-                'highest_bid': bid_amount,
-                'highest_bidder': username
-            }, to=request.sid)
-    
+@socketio.on('connect')
+def handle_connect():
+    print('User connected')
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    """Handle user disconnection."""
-    username = session.get('username')
-    if username in auction_manager.bidders:
-        del auction_manager.bidders[username]
-        emit('update_bidders', {'bidders': auction_manager.bidders}, to=request.sid)
+    print('User disconnected')
+
+@socketio.on('join')
+def on_join(data):
+    username = data['username']
+    room = data['room']
+    join_room(room)
+    auction_data['users'][username] = 30000  # Example: Each user starts with $1000
+
+    if username not in obs_manager.auctioner_id:
+        obs_manager.auctioner_pokemon[username] = []
+        obs_manager.auctioner_id[username] = obs_manager.auctioner_assigner
+        obs_manager.set_auctioner_name(username)
+        obs_manager.auctioner_assigner += 1
+
+    emit('user_joined', {'msg': f"{username} has joined the room."}, room=room)
+
+@socketio.on('leave')
+def on_leave(data):
+    username = data['username']
+    room = data['room']
+    leave_room(room)
+    emit('user_left', {'msg': f"{username} has left the room."}, room=room)
+
+@socketio.on('bid')
+def on_bid(data):
+    username = data['username']
+    amount = data['amount']
+    current_item = auction_data['current_item']
+
+    previous_info = auction_data['bids'][-1]
+    
+    if auction_data['users'][username] >= amount and amount > previous_info['amount'] or len(obs_manager.auctioner_pokemon[username]) >= 6:
+        auction_data['bids'].append({'username': username, 'amount': amount})
+        # auction_data['users'][username] -= amount
+
+        obs_manager.set_bidding_info(amount, username, previous_info['amount'], previous_info['username'], False)
+
+        emit('new_bid', {'username': username, 'amount': amount}, broadcast=True)
+    else:
+        emit('error', {'msg': 'Insufficient funds or bid is not higher than the previous'}, room=request.sid)
+        print('error')
+
+@socketio.on('end_item')
+def end_item():
+    final_amount = auction_data['bids'][-1]['amount']
+    final_username = auction_data['bids'][-1]['username']
+
+    auction_data['users'][final_username] -= final_amount
+
+    obs_manager.set_auctioner_money(auction_data['users'][final_username], final_username)
+    obs_manager.auctioner_pokemon[final_username].append(auction_data['current_item'])
+
+    party_index = len(obs_manager.auctioner_pokemon[final_username])
+    auctioner_index = obs_manager.auctioner_id[final_username]
+    obs_manager.set_party_pokemon(obs_manager.curr_img, auctioner_index, party_index)
+    obs_manager.empty_fields()
+
+@socketio.on('suggest_item')
+def suggest_item(data):
+    item = data['item']
+    username = data['username']
+    auction_data['suggested_items'].append(item)
+    auction_data['bids'].append({'username': username, 'amount': 1})
+    auction_data['current_item'] = item
+
+    obs_manager.set_current_pokemon_auction_info(item.lower())
+    obs_manager.set_bidding_info(1, username, 0, '', True)
+
+    emit('new_item_suggested', {'item': item, 'username': username}, broadcast=True)
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    socketio.run(app, debug=True, port=5000)

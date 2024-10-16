@@ -1,35 +1,68 @@
-const socket = io();
+let socket = io();
+let username = null;
+let currentItem = null;
+let highestBid = 0;
 
-// Listen for new auctions
-socket.on('start_auction', (data) => {
-    document.getElementById('current-item').innerText = `Item: ${data.item.name}`;
-    document.getElementById('highest-bid').innerText = `Highest Bid: $${data.item.highest_bid}`;
-});
+window.onload = () => {
+    // Ask for the user's name
+    username = prompt("Enter your name:");
+    socket.emit('join', { username: username, room: 'auction-room' });
 
-// Listen for bid updates
-socket.on('bid_update', (data) => {
-    console.log(data)
+    document.getElementById('name').textContent = `${username}`
+    // Update the UI when a user joins the room
+    socket.on('user_joined', (data) => {
+        // No alerts, updating the UI dynamically
+        console.log(`${data.msg}`);
+    });
 
-    document.getElementById('highest-bid').innerText = `Highest Bid: $${data.highest_bid} (by ${data.highest_bidder})`;
-    document.getElementById('current-leader').innerText = `Current Leader: $${data.highest_bidder}`;
-});
+    // Update the UI with the new bid
+    socket.on('new_bid', (data) => {
+        if (data.amount > highestBid) {
+            highestBid = data.amount;
+            document.getElementById('bid-info').textContent = `Highest bid: ${data.amount} by ${data.username}`;
+        }
+        
+        let bidsDiv = document.getElementById('bids');
+        bidsDiv.innerHTML += `<p>${data.username} bid ${data.amount}</p>`;
+    });
 
-// Listen for auction timer updates
-socket.on('timer_update', (data) => {
-    document.getElementById('timer').innerText = `Time Left: ${data.time_left}s`;
-});
+    // Display the newly suggested item
+    socket.on('new_item_suggested', (data) => {
+        currentItem = data.item;
+        highestBid = 0;  // Reset highest bid for new item
+        document.getElementById('current-item').textContent = `Current item: ${data.item}`;
+        document.getElementById('suggest-info').textContent = `Suggested by: ${data.username}`;
+        document.getElementById('bid-info').textContent = `Highest bid: N/A`;
+    });
+};
 
-// Listen for auction ended
-socket.on('auction_ended', (data) => {
-    alert(`Auction ended! Winner: ${data.winner || 'None'} with a bid of $${data.highest_bid}`);
-});
-
-// Place a bid
+// Function to place a bid
 function placeBid() {
+    let bidAmount = document.getElementById('bid-amount').value;
 
-    //takes money amount from field
-    const bidAmount = parseFloat(document.getElementById('bid-amount').value);
+    // Ensure bid amount is valid and username exists
+    if (bidAmount && username) {
+        socket.emit('bid', { username: username, amount: parseInt(bidAmount) });
+        document.getElementById('bid-amount').value = '';  // Clear the input
+    } else {
+        console.log("Invalid bid or username");
+    }
+}
 
-    //connects to python socket place_bid
-    socket.emit('place_bid', { bid_amount: bidAmount });
+// Function to suggest a new item
+function suggestItem() {
+    let item = document.getElementById('suggest-item').value;
+    if (item && username) {
+        socket.emit('suggest_item', { item: item, username: username });
+        document.getElementById('suggest-item').value = '';  // Clear the input
+    } else {
+        console.log("Invalid item suggestion");
+    }
+}
+
+function endItem(){
+    if (username){
+        socket.emit('end_item')
+    }
+    document.getElementById('bids').innerHTML = '';
 }

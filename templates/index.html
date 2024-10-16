@@ -1,20 +1,49 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Join Auction Room</title>
+    <title>Auction Room</title>
+    <style>
+        /* Simple styling for the auction room */
+        #auction {
+            max-width: 600px;
+            margin: auto;
+            padding: 20px;
+            border: 1px solid #ccc;
+        }
+        #bid-info, #suggest-info {
+            margin-bottom: 20px;
+        }
+        .bid-list p {
+            margin: 5px 0;
+        }
+    </style>
 </head>
 <body>
-    <h1>Join the Auction Room</h1>
+    <h1>Welcome to the Auction Room</h1>
+    <h2 id="name"></h2>
 
-    {% if error %}
-        <p style="color: red;">{{ error }}</p>
-    {% endif %}
+    <div id="auction">
+        <h2 id="current-item">Current Pokemon: None</h2>
+        <p id="suggest-info">Suggested by: N/A</p>
+        <p id="bid-info">Highest bid: N/A</p>
+        
+        <h3>Place your bid:</h3>
+        <input type="number" id="bid-amount" placeholder="Enter your bid">
+        <button onclick="placeBid()">Place Bid</button>
 
-    <form action="/join" method="POST">
-        <input type="text" id="username" name="username" placeholder="Enter your name" required>
-        <button type="submit">Join Auction</button>
-    </form>
+        <h3>Suggest a new pokemon:</h3>
+        <input type="text" id="suggest-item" placeholder="Item name">
+        <button onclick="suggestItem()">Suggest Item</button>
+
+        <br />
+        <br />
+        <button onclick="endItem()">End current cycle</button>
+
+        <h3>Bid history:</h3>
+        <div class="bid-list" id="bids"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.3.2/socket.io.min.js"></script>
+    <script src="/static/script.js"></script>
 </body>
 </html>

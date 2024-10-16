@@ -1,7 +1,4 @@
 obs_websocket_py==1.0
-sqlmodel
 websockets
 flask
 flask_sock
-Werkzeug
-gunicorn
